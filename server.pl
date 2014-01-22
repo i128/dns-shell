@@ -6,7 +6,7 @@
 #
 ###############################
 # Known Bugs:
-# * Can not change directories
+# * Can not change into directories which have a space in the name.
 # * Can not run apps in interactive mode. Client will hang
 #
 ###############################
