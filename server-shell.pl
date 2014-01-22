@@ -188,7 +188,10 @@ sub recieve_msg {
                 debug("CLIENT_MSG_QUEUE", "CLEARED");
                 $sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='NULL'");
                 $sth->execute();
-                $sth->finish();
+                $sth = $dbh->prepare("UPDATE cmd_queue SET CLIENT_CMD='NULL'");
+                $sth->execute();
+
+		$sth->finish();
                 $dbh->disconnect();
                 return $return;
 	
