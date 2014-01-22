@@ -8,15 +8,15 @@ Before you can start you must own/register a domain name.  When you register you
 
 This repo contains three files.  client.pl, server.pl and server-shell.pl.  The client.pl is deployed to the remote system you wish to have a remote shell on.  Once launched (with the proper --domain=bar.foo.com), it will make TXT dns query back to a domain that you have registered.  It'll utilize the clients DNS server settings and traverse its way out to the greater internet towards your server.
 
-On your server, as root, launch server.pl with the proper domain switch (i.e. --domain=bar.foo.com).  Doing this tells the server to ignore the bar.foo.com part of the dns query and proccess the remaining of the packet.  Once a client joins the server, the server assigns a client id (a number between 1-65535).  To interact with the client, in a new windows, launch server-shell --id=[client_id].
+On your server, as root, launch server.pl (optionally with a -d switch for more verbose debugging info).  Once a client joins the server, the client will inform the server what its client id is. (a random number between 1-65535).  To interact with the client, in a new windows, launch server-shell --id=[client_id].
 
-Due to the nature of DNS, there's no true bi-directional communication.  Instead the client.pl will poll the server every 60 seconds by default.  Any command entered in server-shell is queued up in the server.pl and will be sent back to the client the next time it calls home.  The frequency in which the client calls home can be adjusted by the client-shell by using the sleep command.  Type help inside the server-shell prompt.
+Due to the nature of DNS, there's no true bi-directional communication.  Instead the client.pl will poll the server every 60 seconds by default.  Any command entered in server-shell is queued up in the server.pl in a sqlite db dedicated for each client id and will be sent back to the client the next time it calls home.  Simillarly any responses sent from the client to the server is queued in the sqlite db and polled by the server shell.  The frequency in which the client calls home can be adjusted by the client-shell by using the sleep command.  Type help inside the server-shell prompt for more information or to see a list of available commandss.
 
 
 =======================
 Repo contails 3 files:
 client.pl - install on remote system
-server.pl - run once
+server.pl - run once on the server
 server-shell.pl - run once for each shell that client that successfully calls back to client.pl
 
 =======================
