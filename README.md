@@ -28,8 +28,8 @@ MIME::Base32
 IO::CaptureOutput
 
 To install use cpan or ppm
-# cpan install Net-DNS MIME-Base32 IO-CaptureOutput
-# ppm install Net-DNS MIME-Base32 IO-CaptureOutput
+$ cpan install Net-DNS MIME-Base32 IO-CaptureOutput
+$ ppm install Net-DNS MIME-Base32 IO-CaptureOutput
 
 Server & Server-Shell:
 Net::DNS::Nameserver
@@ -37,23 +37,23 @@ use MIME::Base32
 use DBI
 
 To install use cpan or ppm
-# cpan install Net-DNS-Nameserver MIME-Base32 DBI
-# ppm install Net-DNS-Server MIME-Base32 DBI
+$ cpan install Net-DNS-Nameserver MIME-Base32 DBI
+$ ppm install Net-DNS-Server MIME-Base32 DBI
 
 sqlite3:
-apt-get install sqlite3 on debian/ubuntu/kali, etc.
+$apt-get install sqlite3 on debian/ubuntu/kali, etc.
 
 =========================
 To compile for windows (optional)
 
 To compile the client.pl into a window's exe, just install par packer:
-cpan install Par-Packer
+$ cpan install Par-Packer
 or
-ppm install Par-Packer
+$ ppm install Par-Packer
 
 To compile:
 
-# pp client.pl -o client.exe
+$ pp client.pl -o client.exe
 
 =========================
 To use: Before you start
