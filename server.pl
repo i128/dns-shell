@@ -6,7 +6,7 @@
 #
 ###############################
 # Known Bugs:
-# * Can not change into directories which have a space in the name.
+# * Can not change directories
 # * Can not run apps in interactive mode. Client will hang
 #
 ###############################
@@ -61,6 +61,7 @@ sub reply_handler {
 	my ($qname, $qclass, $qtype, $peerhost,$query,$conn) = @_;
 	my ($rcode, @ans, @auth, @add);
 
+	print "########################################################\n";
 	print "Received query from $peerhost to ". $conn->{sockhost}. "\n";
 	#$query->print;
 
@@ -101,7 +102,7 @@ sub reply_handler {
 			if ($err) {
 				debug("CREATE $client_id.db msg_queue table", $err);
 			}
-			$err = `sqlite3 $client_id.db "CREATE TABLE msg_buff (SEQ INTEGER, PART varchar(100));"`;
+			$err = `sqlite3 $client_id.db "CREATE TABLE msg_buff (SEQ INTEGER PRIMARY KEY, PART varchar(100));"`;
 			if ($err) {
 				debug("CREATE $client_id.db msg_buff table", $err);
 			}
@@ -126,7 +127,7 @@ sub reply_handler {
 		# insert part
 		debug("CLIENT MSG_BUFF: $part", $client_msg);
                 my $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $!; 
-                my $sth = $dbh->prepare("INSERT INTO msg_buff(SEQ, PART) VALUES('$part', '$client_msg')");
+		my $sth = $dbh->prepare("INSERT OR REPLACE INTO msg_buff(SEQ, PART) VALUES('$part', '$client_msg')");
                 $sth->execute();
                 
 		# check if we have all the parts
@@ -141,14 +142,14 @@ sub reply_handler {
                 $sth->finish();
                 $dbh->disconnect();
 
-		if ($db_cnt eq $parts) {
+		if ($db_cnt >= $parts) {
 			
 			#msg complete
 			# Assemble msg and put into queue
 			$dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $!;
-                        $sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='$client_msg'");	
+                        #$sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='$client_msg'");	
 			my $reassembled_message_encoded = '';
-			for (my $seq = 0; $seq < $parts; $seq++) {
+			for (my $seq = 1; $seq <= $parts; $seq++) {
 				$sth = $dbh->prepare("SELECT PART FROM msg_buff WHERE SEQ = '$seq'");
 				$sth->execute();
                         	
