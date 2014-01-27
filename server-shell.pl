@@ -228,7 +228,7 @@ sub shell{
 		use Term::Prompt;
 		$rsp = recieve_msg();
 		if ($rsp) {
-			print "$rsp";
+			print "$rsp\n";
 			$wait_for_rsp = 0;
 		} elsif (!$wait_for_rsp) {
 			my $cmd = prompt('x', "SHELL>", '', '');
