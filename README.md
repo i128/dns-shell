@@ -26,10 +26,11 @@ client:
 Net::DNS
 MIME::Base32
 IO::CaptureOutput
+Threads;
 
 To install use cpan or ppm
-$ cpan install Net-DNS MIME-Base32 IO-CaptureOutput
-$ ppm install Net-DNS MIME-Base32 IO-CaptureOutput
+$ cpan install Net-DNS MIME-Base32 IO-CaptureOutput threads
+$ ppm install Net-DNS MIME-Base32 IO-CaptureOutput threads
 
 Server & Server-Shell:
 Net::DNS::Nameserver
